@@ -21,12 +21,13 @@ ultron/
 │   ├── models.py      Pipeline / order / invoice / payment / fulfilment enums
 │   ├── ledger.py      Received revenue, costs, profit
 │   └── engine.py      Prospects→…→GET PAID business rules
+├── research.py         Free RSS collection, evidence scoring and reports
 ├── adapters/          GitHub, Asana, Make, Shopify, Stripe, eBay
 ├── api/app.py         FastAPI routes (thin; rules live in the engine)
 └── jobs/scheduler.py  Background jobs tracked as operations
 scripts/
 └── pr_review_to_asana.py   PR-review → Asana follow-up (used by the workflow)
-tests/                 pytest suite (58 tests)
+tests/                 pytest suite
 ```
 
 ## Installation
@@ -52,7 +53,7 @@ Health: `GET /health` (liveness), `GET /ready` (database + integration status).
 |---|---|---|
 | `ULTRON_DATABASE_PATH` | no (default `ultron.db`) | SQLite file location |
 | `ULTRON_API_KEYS` | in production | Comma-separated `key:scope,scope` entries |
-| `ULTRON_ENV` | no | `development` \| `test` \| `staging` \| `production` |
+| `ULTRON_ENV` | no | `development` | `test` | `staging` | `production` |
 | `ULTRON_LOG_LEVEL` | no | Python logging level |
 | `ULTRON_HTTP_TIMEOUT_SECONDS` | no | Adapter request timeout (default 15) |
 | `ULTRON_MAX_RETRIES` | no | Adapter retry attempts (default 3) |
@@ -74,6 +75,26 @@ Invalid configuration fails fast at startup with every problem listed.
 - Idempotency keys on operations/orders and provider references on
   payments prevent duplicates; failed operations retry safely via
   `POST /operations/{id}/retry`.
+
+## Free revenue opportunity research
+
+The first R&D collector is implemented in `ultron/research.py`. It reads
+public RSS/Atom feeds from `config/research-feeds.json`, deduplicates entries,
+scores evidence/actionability (not win probability), and writes:
+- `data/revenue-opportunities.json`
+- `reports/revenue-opportunities.md`
+
+GitHub Actions runs it daily at 09:00 UTC and supports manual dispatch.
+The workflow uses no third-party Actions, AI API calls, paid APIs, secrets
+or paid connectors. It is configured for a public repository, uses a
+five-minute timeout and commits only the report/data output.
+
+Google News RSS feeds are discovery leads only: the endpoint is an observed
+community interface rather than a documented API, links may redirect and
+feed content may omit the original article body. Verify every lead against
+its original source before acting. The report keeps advertised opportunity
+values separate from collected revenue; the payment ledger is not connected
+in this first version. See [docs/revenue-research.md](docs/revenue-research.md).
 
 ## GitHub PR review → Asana
 
