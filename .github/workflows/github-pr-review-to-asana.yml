@@ -54,7 +54,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p scripts
-          gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/pr_review_to_asana.py?ref=${DEFAULT_BRANCH}" \
+          REF="${DEFAULT_BRANCH}"
+          # Manual replays may target a branch chosen by the operator (e.g.
+          # before the script exists on the default branch). Automatic
+          # pull_request_review runs always use the default branch, so no
+          # untrusted PR code is ever executed.
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            REF="${GITHUB_REF_NAME}"
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/pr_review_to_asana.py?ref=${REF}" \
             -H "Accept: application/vnd.github.raw+json" > scripts/pr_review_to_asana.py
           python3 -m py_compile scripts/pr_review_to_asana.py
 
