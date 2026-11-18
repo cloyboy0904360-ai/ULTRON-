@@ -1,0 +1,65 @@
+name: Free revenue opportunity research
+
+# Daily feed collection, deterministic scoring and report generation.
+# No marketplace actions, AI API calls, paid APIs, or paid credentials are used.
+# This repository is public; standard GitHub-hosted runner usage is free.
+# Google News RSS is an observed public feed interface, not a documented API.
+# Every result is a lead only and must be verified at its original source.
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ultron-free-revenue-research
+  cancel-in-progress: false
+
+jobs:
+  collect-score-report:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch the scheduled revision without third-party actions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q -B main FETCH_HEAD
+
+      - name: Collect public RSS leads and build report
+        id: research
+        run: |
+          set -euo pipefail
+          set +e
+          python3 -m ultron.research > /tmp/ultron-research-report.md
+          result=$?
+          set -e
+          cat /tmp/ultron-research-report.md >> "${GITHUB_STEP_SUMMARY}"
+          echo "collector_exit_code=$result" >> "${GITHUB_OUTPUT}"
+          exit "$result"
+
+      - name: Commit refreshed data and report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          if [ -f data/revenue-opportunities.json ] && [ -f reports/revenue-opportunities.md ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/revenue-opportunities.json reports/revenue-opportunities.md
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: refresh free revenue opportunity research"
+              git push origin HEAD:main
+            fi
+          fi
