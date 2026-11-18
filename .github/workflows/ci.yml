@@ -8,15 +8,31 @@ on:
 permissions:
   contents: read
 
+# NOTE: this repository's Actions policy only permits actions owned by
+# cloyboy0904360-ai, so this workflow deliberately uses no external
+# actions. Source checkout is done with git directly (authenticated via
+# gh) and the preinstalled runner Python is used.
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Check out repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+
+      - name: Show Python version
+        run: python3 --version
+
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: python3 -m pip install --user -r requirements-dev.txt
+
       - name: Run tests
-        run: python -m pytest
+        run: python3 -m pytest

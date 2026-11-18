@@ -9,6 +9,11 @@ name: GitHub PR review to Asana
 # This is NOT exactly-once; a crash between Asana creation and the marker
 # comment can duplicate a task. The concurrency group below prevents
 # simultaneous processing of the same review.
+#
+# NOTE: this repository's Actions policy only permits actions owned by
+# cloyboy0904360-ai, so this workflow uses no external actions. The
+# processing script is fetched from the DEFAULT BRANCH only — never from
+# the pull request head — so no untrusted PR code is executed.
 
 on:
   pull_request_review:
@@ -42,16 +47,16 @@ jobs:
   process-review:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out workflow scripts from the default branch
-        uses: actions/checkout@v4
-        with:
-          # Never check out the PR head: only trusted default-branch code runs.
-          ref: ${{ github.event.repository.default_branch }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Fetch processing script from the default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          mkdir -p scripts
+          gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/pr_review_to_asana.py?ref=${DEFAULT_BRANCH}" \
+            -H "Accept: application/vnd.github.raw+json" > scripts/pr_review_to_asana.py
+          python3 -m py_compile scripts/pr_review_to_asana.py
 
       - name: Process submitted review
         id: process
@@ -64,8 +69,17 @@ jobs:
 
       - name: Preserve failed event for recovery
         if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: asana-review-recovery-${{ github.event.pull_request.number || inputs.pr_number }}-${{ github.event.review.id || inputs.review_id || 'latest' }}
-          path: asana-recovery.json
-          if-no-files-found: ignore
+        run: |
+          set -euo pipefail
+          if [ -f asana-recovery.json ]; then
+            {
+              echo "### Asana review-processing failure — recovery record"
+              echo
+              echo '```json'
+              cat asana-recovery.json
+              echo
+              echo '```'
+              echo
+              echo "Replay with: Actions → GitHub PR review to Asana → Run workflow → pr_number, review_id."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
