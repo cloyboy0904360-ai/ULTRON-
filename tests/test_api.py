@@ -1,0 +1,88 @@
+import pytest
+from fastapi.testclient import TestClient
+
+from ultron.api.app import create_app
+from ultron.config import Settings
+
+
+@pytest.fixture()
+def client(tmp_path):
+    settings = Settings(database_path=str(tmp_path / "api.db"))
+    with TestClient(create_app(settings)) as test_client:
+        yield test_client
+
+
+@pytest.fixture()
+def secured_client(tmp_path):
+    settings = Settings(
+        database_path=str(tmp_path / "api.db"),
+        api_keys=("test-key:operations:write,revenue:write,revenue:read",),
+    )
+    with TestClient(create_app(settings)) as test_client:
+        yield test_client
+
+
+def test_health(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["database"] == "ok"
+
+
+def test_ready_reports_blocked_integrations(client):
+    body = client.get("/ready").json()
+    assert body["ready"] is True
+    assert set(body["integrations_blocked"]) == {
+        "github", "asana", "make", "shopify", "stripe", "ebay"
+    }
+
+
+def test_operation_lifecycle_over_http(client):
+    created = client.post(
+        "/operations", json={"description": "Do the thing", "owner": "sam"}
+    )
+    assert created.status_code == 201
+    op_id = created.json()["id"]
+
+    running = client.post(
+        f"/operations/{op_id}/transition", json={"target": "RUNNING", "actor": "sam"}
+    )
+    assert running.status_code == 200
+
+    blocked = client.post(
+        f"/operations/{op_id}/transition", json={"target": "VERIFIED", "actor": "sam"}
+    )
+    assert blocked.status_code == 422  # evidence required
+    assert blocked.json()["error"]["code"] == "EVIDENCE_REQUIRED"
+
+
+def test_duplicate_idempotency_key_conflict(client):
+    payload = {"description": "x", "owner": "a", "idempotency_key": "k1"}
+    assert client.post("/operations", json=payload).status_code == 201
+    assert client.post("/operations", json=payload).status_code == 409
+
+
+def test_unknown_operation_is_404(client):
+    assert client.get("/operations/nope").status_code == 404
+
+
+def test_auth_required_when_keys_configured(secured_client):
+    assert secured_client.post(
+        "/operations", json={"description": "x", "owner": "a"}
+    ).status_code == 401
+    assert secured_client.post(
+        "/operations",
+        json={"description": "x", "owner": "a"},
+        headers={"X-API-Key": "wrong"},
+    ).status_code == 401
+    ok = secured_client.post(
+        "/operations",
+        json={"description": "x", "owner": "a"},
+        headers={"X-API-Key": "test-key"},
+    )
+    assert ok.status_code == 201
+
+
+def test_revenue_report_requires_scope(secured_client):
+    assert secured_client.get(
+        "/revenue/report", headers={"X-API-Key": "test-key"}
+    ).status_code == 200

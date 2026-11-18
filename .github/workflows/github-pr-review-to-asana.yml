@@ -1,15 +1,30 @@
 name: GitHub PR review to Asana
+
+# Processes SUBMITTED pull request reviews and creates an Asana
+# follow-up task for reviews that require changes or contain actionable
+# inline comments. Approved/dismissed reviews create nothing.
+#
+# Delivery semantics: at-least-once from GitHub with idempotent
+# processing per (repository, PR, review id) via a hidden marker comment.
+# This is NOT exactly-once; a crash between Asana creation and the marker
+# comment can duplicate a task. The concurrency group below prevents
+# simultaneous processing of the same review.
+
 on:
-  pull_request:
-    types: [review_requested]
+  pull_request_review:
+    types: [submitted]
   workflow_dispatch:
     inputs:
       pr_number:
-        description: Pull request number to validate
+        description: Pull request number to process or replay
         required: true
         type: number
+      review_id:
+        description: Review id (optional; defaults to the latest submitted review)
+        required: false
+        type: number
       dry_run:
-        description: Validate the PR and workflow without creating an Asana task
+        description: Validate everything without creating an Asana task
         required: true
         default: true
         type: boolean
@@ -20,77 +35,37 @@ permissions:
   issues: write
 
 concurrency:
-  group: asana-pr-review-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr_number }}
+  group: asana-pr-review-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr_number }}-${{ github.event.review.id || inputs.review_id || 'latest' }}
   cancel-in-progress: false
 
 jobs:
-  create-asana-follow-up:
+  process-review:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate event and PR context
-        id: context
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
-          REPOSITORY: ${{ github.repository }}
-          EVENT_NAME: ${{ github.event_name }}
-          DRY_RUN: ${{ inputs.dry_run }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${PR_NUMBER}" || "${PR_NUMBER}" == "null" ]]; then
-            echo "::error::No pull request number was supplied."
-            exit 1
-          fi
-          PR_JSON="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
-          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
-          echo "title=$(jq -r '.title' <<< "$PR_JSON")" >> "$GITHUB_OUTPUT"
-          echo "url=$(jq -r '.html_url' <<< "$PR_JSON")" >> "$GITHUB_OUTPUT"
-          echo "author=$(jq -r '.user.login' <<< "$PR_JSON")" >> "$GITHUB_OUTPUT"
-          echo "state=$(jq -r '.state' <<< "$PR_JSON")" >> "$GITHUB_OUTPUT"
-          echo "Validated PR #${PR_NUMBER} in ${REPOSITORY}."
-      - name: Dry-run verification
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
-        run: |
-          echo "DRY RUN PASSED: pull request context is readable."
-          echo "No Asana task was created and no external changes were made."
-      - name: Require Asana credential
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
-        env:
-          ASANA_ACCESS_TOKEN: ${{ secrets.ASANA_ACCESS_TOKEN }}
-        run: |
-          if [[ -z "${ASANA_ACCESS_TOKEN}" ]]; then
-            echo "::error::Missing repository secret ASANA_ACCESS_TOKEN. Add it in GitHub Settings > Secrets and variables > Actions."
-            exit 1
-          fi
-      - name: Create exactly-once Asana follow-up
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+      - name: Check out workflow scripts from the default branch
+        uses: actions/checkout@v4
+        with:
+          # Never check out the PR head: only trusted default-branch code runs.
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Process submitted review
+        id: process
         env:
           GH_TOKEN: ${{ github.token }}
           ASANA_ACCESS_TOKEN: ${{ secrets.ASANA_ACCESS_TOKEN }}
-          REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ steps.context.outputs.number }}
-          PR_TITLE: ${{ steps.context.outputs.title }}
-          PR_URL: ${{ steps.context.outputs.url }}
-          PR_AUTHOR: ${{ steps.context.outputs.author }}
-          REVIEWER: ${{ github.event.requested_reviewer.login || 'unspecified' }}
-          WORKSPACE_GID: "1217093232814223"
-          ASSIGNEE_GID: "1217093232814211"
-        run: |
-          set -euo pipefail
-          MARKER="asana-pr-review:${REPOSITORY}#${PR_NUMBER}"
-          COMMENTS="$(gh api --paginate "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100")"
-          if jq -e --arg marker "$MARKER" '[.[] | select(.body | contains($marker))] | length > 0' <<< "$COMMENTS" >/dev/null; then
-            echo "An Asana task marker already exists for ${MARKER}; skipping duplicate creation."
-            exit 0
-          fi
-          NOTES="GitHub pull request review follow-up\n\nRepository: ${REPOSITORY}\nPull request: ${PR_URL}\nAuthor: ${PR_AUTHOR}\nRequested reviewer: ${REVIEWER}\n\nReview the description, changed files, tests, security implications, and merge readiness. Record findings in GitHub before approving or requesting changes.\n\nIdempotency marker: ${MARKER}"
-          PAYLOAD="$(jq -n --arg name "Review PR #${PR_NUMBER}: ${PR_TITLE}" --arg notes "$NOTES" --arg workspace "$WORKSPACE_GID" --arg assignee "$ASSIGNEE_GID" '{data:{name:$name,notes:$notes,workspace:$workspace,assignee:$assignee}}')"
-          RESPONSE="$(curl --fail-with-body --silent --show-error -X POST "https://app.asana.com/api/1.0/tasks" -H "Authorization: Bearer ${ASANA_ACCESS_TOKEN}" -H "Content-Type: application/json" --data "$PAYLOAD")"
-          TASK_URL="$(jq -r '.data.permalink_url // empty' <<< "$RESPONSE")"
-          TASK_GID="$(jq -r '.data.gid // empty' <<< "$RESPONSE")"
-          if [[ -z "$TASK_GID" ]]; then
-            echo "::error::Asana did not return a task GID."
-            exit 1
-          fi
-          gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" -f body="Asana follow-up created: ${TASK_URL:-https://app.asana.com/0/0/0}\n\n<!-- ${MARKER} -->" >/dev/null
-          echo "Created Asana task ${TASK_GID} for PR #${PR_NUMBER}."
+          ASANA_WORKSPACE_GID: ${{ vars.ASANA_WORKSPACE_GID }}
+          ASANA_PROJECT_GID: ${{ vars.ASANA_PROJECT_GID }}
+        run: python3 scripts/pr_review_to_asana.py
+
+      - name: Preserve failed event for recovery
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asana-review-recovery-${{ github.event.pull_request.number || inputs.pr_number }}-${{ github.event.review.id || inputs.review_id || 'latest' }}
+          path: asana-recovery.json
+          if-no-files-found: ignore
