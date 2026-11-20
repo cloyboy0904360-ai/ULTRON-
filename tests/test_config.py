@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 from ultron.auth import Authenticator
 from ultron.config import Settings
+from ultron.errors import ConfigError
 
 
 def test_api_key_entries_split_on_semicolon_and_preserve_comma_scopes():
@@ -26,9 +29,6 @@ def test_api_key_entries_split_on_semicolon_and_preserve_comma_scopes():
 
 
 def test_production_configuration_requires_at_least_one_api_key():
-    try:
+    with pytest.raises(ConfigError) as error:
         Settings.load({"ULTRON_ENV": "production"})
-    except Exception as exc:
-        assert "ULTRON_API_KEYS is required" in str(exc)
-    else:
-        raise AssertionError("production without API keys must fail")
+    assert "ULTRON_API_KEYS is required" in error.value.details["problems"]
