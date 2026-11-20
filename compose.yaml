@@ -47,5 +47,34 @@ services:
     cap_drop:
       - ALL
 
+  ultron-report:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - ultron
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          if [ -f /data/ultron.db ]; then
+            python -m scripts.daily_report --database-path /data/ultron.db --output-dir /data/reports
+          else
+            echo "ULTRON database not created yet; report will retry in 24 hours"
+          fi
+          sleep 86400
+        done
+    environment:
+      ULTRON_DATABASE_PATH: /data/ultron.db
+    volumes:
+      - ultron_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
 volumes:
   ultron_data:
