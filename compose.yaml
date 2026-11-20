@@ -27,12 +27,12 @@ services:
       - sh
       - -c
       - |
+        while [ ! -f /data/ultron.db ]; do
+          echo "Waiting for ULTRON database before first backup"
+          sleep 10
+        done
         while true; do
-          if [ -f /data/ultron.db ]; then
-            python -m scripts.backup_db --database-path /data/ultron.db --backup-dir /data/backups --keep 7
-          else
-            echo "ULTRON database not created yet; backup will retry in 24 hours"
-          fi
+          python -m scripts.backup_db --database-path /data/ultron.db --backup-dir /data/backups --keep 7
           sleep 86400
         done
     environment:
@@ -56,12 +56,12 @@ services:
       - sh
       - -c
       - |
+        while [ ! -f /data/ultron.db ]; do
+          echo "Waiting for ULTRON database before first report"
+          sleep 10
+        done
         while true; do
-          if [ -f /data/ultron.db ]; then
-            python -m scripts.daily_report --database-path /data/ultron.db --output-dir /data/reports
-          else
-            echo "ULTRON database not created yet; report will retry in 24 hours"
-          fi
+          python -m scripts.daily_report --database-path /data/ultron.db --output-dir /data/reports
           sleep 86400
         done
     environment:
