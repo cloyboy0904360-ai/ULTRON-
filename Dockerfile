@@ -8,6 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY ultron ./ultron
+COPY scripts ./scripts
 RUN pip install --no-cache-dir .
 RUN mkdir -p /data && chown -R 10001:10001 /app /data
 USER 10001:10001
