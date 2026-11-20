@@ -18,7 +18,7 @@ the backup directory. Copy backups to an independent off-host location using
 a separately approved free storage arrangement; this script does not provide
 off-site protection.
 
-## Monitoring and scheduled checks
+## Daily reporting\n\nThe Compose stack runs a separate report worker. It writes one aggregate JSON report per UTC day to `/data/reports`, with operation counts, integration evidence totals and ledger totals in pence. It excludes customer contact details. Reports remain on the same Docker volume; configure an independent off-host copy and notification destination separately.\n\n## Monitoring and scheduled checks
 
 `GET /health` is a liveness check. `GET /ready` checks database readiness
 and reports unconfigured or unreachable integrations as blocked/degraded.
