@@ -8,8 +8,13 @@ and revenue modules.
 from __future__ import annotations
 
 from typing import Any
+import hashlib
+import hmac
+import json
+import time
+from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ..agents import assign_task, list_agents
@@ -49,6 +54,38 @@ _STATUS_CODES = {
     AuthenticationError: 401,
     PermissionDeniedError: 403,
 }
+
+
+def verify_stripe_signature(
+    payload: bytes, signature_header: str, secret: str, *, tolerance_seconds: int = 300
+) -> bool:
+    """Verify Stripe's timestamped HMAC-SHA256 signature without dependencies."""
+    timestamp: int | None = None
+    signatures: list[str] = []
+    for item in signature_header.split(","):
+        key, separator, value = item.strip().partition("=")
+        if not separator:
+            continue
+        if key == "t":
+            try:
+                timestamp = int(value)
+            except ValueError:
+                return False
+        elif key == "v1":
+            signatures.append(value)
+    if timestamp is None or not signatures:
+        return False
+    if abs(int(time.time()) - timestamp) > tolerance_seconds:
+        return False
+    signed_payload = str(timestamp).encode() + b"." + payload
+    expected = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+    return any(hmac.compare_digest(expected, candidate) for candidate in signatures)
+
+
+def _stripe_event_object(event: dict[str, Any]) -> dict[str, Any]:
+    data = event.get("data")
+    obj = data.get("object") if isinstance(data, dict) else None
+    return obj if isinstance(obj, dict) else {}
 
 
 def build_adapters(settings: Settings, db: Database) -> list:
@@ -212,6 +249,144 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         _require(p, "operations:write")
         return operations.retry(operation_id, actor=body.get("actor", p.key_digest[:8]))
+
+
+    # -------------------------------------------------------- Stripe webhook
+    @app.post("/webhooks/stripe")
+    async def stripe_webhook(
+        request: Request,
+        stripe_signature: str | None = Header(default=None, alias="Stripe-Signature"),
+    ) -> dict[str, Any]:
+        webhook_secret = settings.integrations.get("STRIPE_WEBHOOK_SECRET")
+        if not webhook_secret:
+            raise HTTPException(status_code=503, detail="Stripe webhook signing secret is not configured")
+        payload = await request.body()
+        if not stripe_signature or not verify_stripe_signature(
+            payload, stripe_signature, webhook_secret
+        ):
+            raise HTTPException(status_code=400, detail="Invalid Stripe webhook signature")
+        try:
+            event = json.loads(payload)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="Invalid JSON webhook payload")
+        event_id = event.get("id")
+        event_type = event.get("type")
+        if not isinstance(event_id, str) or not event_id or not isinstance(event_type, str):
+            raise HTTPException(status_code=400, detail="Stripe event id and type are required")
+
+        now = datetime.now(timezone.utc).isoformat()
+        digest = hashlib.sha256(payload).hexdigest()
+        db.execute(
+            """INSERT OR IGNORE INTO webhook_events
+               (provider, event_id, event_type, status, received_at, payload_sha256)
+               VALUES ('stripe', ?, ?, 'RECEIVED', ?, ?)""",
+            (event_id, event_type, now, digest),
+        )
+        claim = db.execute(
+            """UPDATE webhook_events SET status = 'PROCESSING', error_details = NULL
+               WHERE provider = 'stripe' AND event_id = ?
+                 AND status IN ('RECEIVED', 'FAILED')""",
+            (event_id,),
+        )
+        if claim.rowcount != 1:
+            existing = db.query_one(
+                "SELECT status FROM webhook_events WHERE provider = 'stripe' AND event_id = ?",
+                (event_id,),
+            )
+            return {
+                "received": True,
+                "event_id": event_id,
+                "status": existing["status"] if existing else "UNKNOWN",
+                "duplicate": True,
+            }
+
+        result_status = "IGNORED_UNSUPPORTED_EVENT"
+        try:
+            if event_type in {
+                "checkout.session.completed",
+                "checkout.session.async_payment_succeeded",
+            }:
+                session = _stripe_event_object(event)
+                metadata = session.get("metadata") or {}
+                invoice_id = metadata.get("ultron_invoice_id") if isinstance(metadata, dict) else None
+                if not invoice_id:
+                    result_status = "IGNORED_NO_ULTRON_INVOICE"
+                elif session.get("payment_status") != "paid":
+                    result_status = "IGNORED_UNPAID"
+                else:
+                    currency = str(session.get("currency") or "").lower()
+                    amount_pence = session.get("amount_total")
+                    payment_intent = session.get("payment_intent")
+                    if isinstance(payment_intent, dict):
+                        payment_intent = payment_intent.get("id")
+                    reference = payment_intent or session.get("id")
+                    if currency != "gbp":
+                        raise ValidationError("ULTRON Stripe webhook accepts GBP payments only")
+                    if not isinstance(amount_pence, int) or amount_pence <= 0:
+                        raise ValidationError("Stripe session amount_total must be positive integer pence")
+                    if not isinstance(reference, str) or not reference:
+                        raise ValidationError("Stripe session has no payment reference")
+                    invoice = db.query_one("SELECT * FROM invoices WHERE id = ?", (invoice_id,))
+                    if not invoice:
+                        raise NotFoundError(f"ULTRON invoice {invoice_id} not found")
+                    if invoice["status"] == "VOID":
+                        raise ValidationError("Cannot reconcile payment against a VOID invoice")
+                    if amount_pence != invoice["amount_pence"]:
+                        raise ValidationError(
+                            "Stripe amount does not match the ULTRON invoice amount",
+                            details={
+                                "stripe_amount_pence": amount_pence,
+                                "invoice_amount_pence": invoice["amount_pence"],
+                            },
+                        )
+
+                    existing_payment = db.query_one(
+                        "SELECT * FROM payments WHERE provider_reference = ?", (reference,)
+                    )
+                    if existing_payment:
+                        if (
+                            existing_payment["invoice_id"] != invoice_id
+                            or existing_payment["amount_pence"] != amount_pence
+                        ):
+                            raise ValidationError("Stripe payment reference conflicts with an existing ULTRON payment")
+                        if existing_payment["status"] == "SETTLED":
+                            result_status = "PROCESSED_ALREADY_SETTLED"
+                        elif existing_payment["status"] == "AUTHORISED":
+                            revenue.settle_payment(
+                                payment_id=existing_payment["id"],
+                                verification_evidence=f"stripe_event:{event_id};session:{session.get('id')};payment_intent:{reference}",
+                            )
+                            result_status = "PROCESSED"
+                        else:
+                            raise StateTransitionError(
+                                f"Existing Stripe payment is {existing_payment['status']}; automatic reconciliation stopped"
+                            )
+                    else:
+                        payment = revenue.record_payment_authorised(
+                            invoice_id=invoice_id,
+                            provider="stripe",
+                            amount_pence=amount_pence,
+                            provider_reference=reference,
+                        )
+                        revenue.settle_payment(
+                            payment_id=payment["id"],
+                            verification_evidence=f"stripe_event:{event_id};session:{session.get('id')};payment_intent:{reference}",
+                        )
+                        result_status = "PROCESSED"
+        except Exception as exc:
+            db.execute(
+                """UPDATE webhook_events SET status = 'FAILED', processed_at = ?,
+                   error_details = ? WHERE provider = 'stripe' AND event_id = ?""",
+                (datetime.now(timezone.utc).isoformat(), f"{type(exc).__name__}: {exc}"[:1000], event_id),
+            )
+            raise
+
+        db.execute(
+            """UPDATE webhook_events SET status = ?, processed_at = ?
+               WHERE provider = 'stripe' AND event_id = ?""",
+            (result_status, datetime.now(timezone.utc).isoformat(), event_id),
+        )
+        return {"received": True, "event_id": event_id, "status": result_status}
 
     # ------------------------------------------------------------ revenue
     @app.post("/revenue/prospects", status_code=201)
