@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
 
 permissions:
   contents: read
@@ -35,5 +37,14 @@ jobs:
       - name: Install dependencies
         run: python3 -m pip install --user -r requirements-dev.txt
 
-      - name: Run tests
+      - name: Compile application and scripts
+        run: python3 -m compileall -q ultron scripts
+
+      - name: Run full test suite
         run: python3 -m pytest
+
+      - name: Install dependency security scanner
+        run: python3 -m pip install --user pip-audit
+
+      - name: Audit runtime and development dependencies
+        run: "$HOME/.local/bin/pip-audit" -r requirements-dev.txt
