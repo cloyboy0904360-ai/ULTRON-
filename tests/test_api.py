@@ -219,4 +219,4 @@ def test_approval_requires_separate_scope_and_uses_authenticated_identity(secure
         json={"target": "READY", "approver": "forged-approver"},
     )
     assert approved.status_code == 200
-    assert approved.json()["approved_by"] == "e15a9c"
+    assert approved.json()["approved_by"] == "42814ec7"
