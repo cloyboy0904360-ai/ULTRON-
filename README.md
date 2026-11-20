@@ -40,7 +40,7 @@ pip install -r requirements-dev.txt    # + pytest, httpx for tests
 
 ```bash
 export ULTRON_DATABASE_PATH=/var/lib/ultron/ultron.db
-export ULTRON_API_KEYS="key1:operations:write,key2:revenue:write,revenue:read"  # required in production
+export ULTRON_API_KEYS="key1:operations:write;key2:revenue:write,revenue:read"  # required in production
 uvicorn ultron.api.app:create_app --factory --port 8000
 ```
 
@@ -51,12 +51,12 @@ Health: `GET /health` (liveness), `GET /ready` (database + integration status).
 | Variable | Required | Purpose |
 |---|---|---|
 | `ULTRON_DATABASE_PATH` | no (default `ultron.db`) | SQLite file location |
-| `ULTRON_API_KEYS` | in production | Comma-separated `key:scope,scope` entries |
+| `ULTRON_API_KEYS` | in production | Semicolon-separated `key:scope,scope` entries |
 | `ULTRON_ENV` | no | `development` \| `test` \| `staging` \| `production` |
 | `ULTRON_LOG_LEVEL` | no | Python logging level |
 | `ULTRON_HTTP_TIMEOUT_SECONDS` | no | Adapter request timeout (default 15) |
 | `ULTRON_MAX_RETRIES` | no | Adapter retry attempts (default 3) |
-| `GITHUB_TOKEN`, `ASANA_ACCESS_TOKEN`, `ASANA_WORKSPACE_GID`, `MAKE_API_TOKEN`, `SHOPIFY_SHOP`, `SHOPIFY_ACCESS_TOKEN`, `STRIPE_SECRET_KEY`, `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` | optional | Integration credentials. Absent credentials mark that integration **BLOCKED** — they never crash the app. |
+| `GITHUB_TOKEN`, `ASANA_ACCESS_TOKEN`, `ASANA_WORKSPACE_GID`, `MAKE_API_TOKEN`, `SHOPIFY_SHOP`, `SHOPIFY_ACCESS_TOKEN`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` | optional | Integration credentials. Absent credentials mark that integration **BLOCKED** — they never crash the app. |
 
 Invalid configuration fails fast at startup with every problem listed.
 
