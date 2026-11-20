@@ -56,3 +56,39 @@ jobs:
 
       - name: Build production container
         run: docker build --tag ultron:ci .
+
+      - name: Smoke-test live API and SQLite persistence
+        run: |
+          set -euo pipefail
+          docker volume create ultron-ci-data >/dev/null
+          cleanup() {
+            docker rm -f ultron-ci >/dev/null 2>&1 || true
+            docker volume rm ultron-ci-data >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run -d --name ultron-ci --read-only --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -p 8000:8000 \
+            -e ULTRON_ENV=production \
+            -e ULTRON_API_KEYS='ci-test-key:operations:read,operations:write' \
+            -e ULTRON_DATABASE_PATH=/data/ultron.db \
+            -v ultron-ci-data:/data ultron:ci >/dev/null
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/health >/dev/null
+          curl -fsS -H 'X-API-Key: ci-test-key' http://127.0.0.1:8000/agents > /tmp/ultron-agents.json
+          python3 -c "import json; assert len(json.load(open('/tmp/ultron-agents.json'))) == 7"
+          curl -fsS -X POST http://127.0.0.1:8000/operations \
+            -H 'X-API-Key: ci-test-key' -H 'Content-Type: application/json' \
+            -d '{"description":"container persistence smoke test","owner":"OPS"}' > /tmp/ultron-operation.json
+          operation_id=$(python3 -c "import json; print(json.load(open('/tmp/ultron-operation.json'))['id'])")
+          docker restart ultron-ci >/dev/null
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fsS -H 'X-API-Key: ci-test-key' \
+            "http://127.0.0.1:8000/operations/$operation_id" > /tmp/ultron-persisted-operation.json
+          python3 -c "import json; assert json.load(open('/tmp/ultron-persisted-operation.json'))['id'] == '$operation_id'"
