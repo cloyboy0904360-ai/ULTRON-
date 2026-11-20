@@ -269,6 +269,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             event = json.loads(payload)
         except (json.JSONDecodeError, UnicodeDecodeError):
             raise HTTPException(status_code=400, detail="Invalid JSON webhook payload")
+        if not isinstance(event, dict):
+            raise HTTPException(status_code=400, detail="Stripe event must be a JSON object")
         event_id = event.get("id")
         event_type = event.get("type")
         if not isinstance(event_id, str) or not event_id or not isinstance(event_type, str):
