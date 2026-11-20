@@ -16,7 +16,10 @@ def client(tmp_path):
 def secured_client(tmp_path):
     settings = Settings(
         database_path=str(tmp_path / "api.db"),
-        api_keys=("test-key:operations:read,operations:write,revenue:write,revenue:read",),
+        api_keys=(
+            "test-key:operations:read,operations:write,revenue:write,revenue:read",
+            "approver-key:operations:write,operations:approve",
+        ),
     )
     with TestClient(create_app(settings)) as test_client:
         yield test_client
@@ -186,3 +189,34 @@ def test_fulfilment_api_requires_delivery_evidence_before_delivered(client):
     assert delivered.status_code == 200
     assert delivered.json()["status"] == "DELIVERED"
     assert revenue.get_order(order["id"])["status"] == "DELIVERED"
+
+
+
+def test_approval_requires_separate_scope_and_uses_authenticated_identity(secured_client):
+    created = secured_client.post(
+        "/operations",
+        headers={"X-API-Key": "test-key"},
+        json={"description": "protected action", "owner": "FINANCE", "required_approval": True},
+    )
+    operation_id = created.json()["id"]
+    waiting = secured_client.post(
+        f"/operations/{operation_id}/transition",
+        headers={"X-API-Key": "test-key"},
+        json={"target": "AWAITING APPROVAL"},
+    )
+    assert waiting.status_code == 200
+
+    denied = secured_client.post(
+        f"/operations/{operation_id}/transition",
+        headers={"X-API-Key": "test-key"},
+        json={"target": "READY", "approver": "forged-approver"},
+    )
+    assert denied.status_code == 403
+
+    approved = secured_client.post(
+        f"/operations/{operation_id}/transition",
+        headers={"X-API-Key": "approver-key"},
+        json={"target": "READY", "approver": "forged-approver"},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["approved_by"] == "e15a9c"
