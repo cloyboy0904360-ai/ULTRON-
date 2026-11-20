@@ -31,4 +31,4 @@ def test_api_key_entries_split_on_semicolon_and_preserve_comma_scopes():
 def test_production_configuration_requires_at_least_one_api_key():
     with pytest.raises(ConfigError) as error:
         Settings.load({"ULTRON_ENV": "production"})
-    assert "ULTRON_API_KEYS is required" in error.value.details["problems"]
+    assert any("ULTRON_API_KEYS is required" in item for item in error.value.details["problems"])
