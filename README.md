@@ -44,7 +44,7 @@ pip install -r requirements-dev.txt    # + pytest, httpx for tests
 
 ```bash
 export ULTRON_DATABASE_PATH=/var/lib/ultron/ultron.db
-export ULTRON_API_KEYS="key1:operations:write;key2:revenue:write,revenue:read"  # required in production
+export ULTRON_API_KEYS="operator:operations:read,operations:write,revenue:write;approver:operations:write,operations:approve"  # required in production
 uvicorn ultron.api.app:create_app --factory --port 8000
 ```
 
@@ -66,7 +66,7 @@ Invalid configuration fails fast at startup with every problem listed.
 
 ## Core rules enforced by code (and tests)
 
-- An operation can only be `VERIFIED` after all seven completion gates
+- An operation requiring approval cannot run until a separate API key with `operations:approve` authorises it; approver identity is derived from the authenticated key.\n- An operation can only be `VERIFIED` after all seven completion gates
   passed in order, each with evidence.
 - Potential revenue (estimates, proposals, issued invoices) is separate
   from received revenue (settled payments).
