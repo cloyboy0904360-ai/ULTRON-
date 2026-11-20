@@ -16,7 +16,7 @@ def client(tmp_path):
 def secured_client(tmp_path):
     settings = Settings(
         database_path=str(tmp_path / "api.db"),
-        api_keys=("test-key:operations:write,revenue:write,revenue:read",),
+        api_keys=("test-key:operations:read,operations:write,revenue:write,revenue:read",),
     )
     with TestClient(create_app(settings)) as test_client:
         yield test_client
@@ -85,4 +85,43 @@ def test_auth_required_when_keys_configured(secured_client):
 def test_revenue_report_requires_scope(secured_client):
     assert secured_client.get(
         "/revenue/report", headers={"X-API-Key": "test-key"}
+    ).status_code == 200
+
+
+
+def test_workforce_api_lists_and_assigns_persisted_tasks(client):
+    agents = client.get("/agents")
+    assert agents.status_code == 200
+    assert [agent["name"] for agent in agents.json()] == [
+        "NOVA", "FORGE", "PM", "GUARDIAN", "FINANCE", "SALES", "OPS"
+    ]
+
+    assigned = client.post(
+        "/agents/SALES/tasks",
+        json={
+            "description": "Check supplier stock and landed margin",
+            "priority": 1,
+            "required_approval": True,
+            "idempotency_key": "api-sales-first-sale",
+        },
+    )
+    assert assigned.status_code == 201
+    task = assigned.json()
+    assert task["owner"] == "SALES"
+    assert task["status"] == "READY"
+    assert task["required_approval"] is True
+    assert client.get(f"/operations/{task['id']}").json()["id"] == task["id"]
+
+
+def test_workforce_api_rejects_unknown_agent(client):
+    response = client.post(
+        "/agents/UNKNOWN/tasks", json={"description": "not valid"}
+    )
+    assert response.status_code == 422
+
+
+def test_operation_reads_require_read_scope(secured_client):
+    assert secured_client.get("/operations").status_code == 401
+    assert secured_client.get(
+        "/operations", headers={"X-API-Key": "test-key"}
     ).status_code == 200
