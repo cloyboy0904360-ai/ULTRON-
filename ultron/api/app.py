@@ -223,12 +223,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         operation_id: str, body: dict[str, Any], p: Principal = Depends(principal)
     ) -> dict[str, Any]:
         _require(p, "operations:write")
+        target = OperationStatus(body.get("target", ""))
+        current = operations.get(operation_id)
+        approver = None
+        if (
+            current["status"] == OperationStatus.AWAITING_APPROVAL.value
+            and target == OperationStatus.READY
+        ):
+            _require(p, "operations:approve")
+            approver = p.key_digest[:8]
         return operations.transition(
             operation_id,
-            OperationStatus(body.get("target", "")),
-            actor=body.get("actor", p.key_digest[:8]),
+            target,
+            actor=p.key_digest[:8],
             error_details=body.get("error_details"),
-            approver=body.get("approver"),
+            approver=approver,
         )
 
     @app.post("/operations/{operation_id}/gates")
@@ -240,7 +249,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             operation_id,
             Gate(body.get("gate", "")),
             evidence=body.get("evidence", ""),
-            actor=body.get("actor", p.key_digest[:8]),
+            actor=p.key_digest[:8],
         )
 
     @app.post("/operations/{operation_id}/retry")
@@ -248,7 +257,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         operation_id: str, body: dict[str, Any], p: Principal = Depends(principal)
     ) -> dict[str, Any]:
         _require(p, "operations:write")
-        return operations.retry(operation_id, actor=body.get("actor", p.key_digest[:8]))
+        return operations.retry(operation_id, actor=p.key_digest[:8])
 
 
     # -------------------------------------------------------- Stripe webhook
