@@ -185,6 +185,11 @@ class OperationController:
             )
 
         if target == OperationStatus.RUNNING:
+            if op["required_approval"] and not op["approved_by"]:
+                raise ApprovalRequiredError(
+                    "This operation must enter AWAITING APPROVAL and be approved before execution",
+                    details={"operation_id": operation_id},
+                )
             self._require_dependencies_verified(op)
 
         if target == OperationStatus.AWAITING_APPROVAL and not op["required_approval"]:

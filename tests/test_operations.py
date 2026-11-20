@@ -97,7 +97,8 @@ def test_unknown_dependency_rejected(ops):
 
 def test_approval_flow(ops):
     op = ops.create(description="x", owner="a", required_approval=True)
-    ops.transition(op["id"], OperationStatus.RUNNING, actor="bob")
+    with pytest.raises(ApprovalRequiredError):
+        ops.transition(op["id"], OperationStatus.RUNNING, actor="bob")
     waiting = ops.transition(
         op["id"], OperationStatus.AWAITING_APPROVAL, actor="bob"
     )
@@ -108,6 +109,8 @@ def test_approval_flow(ops):
         op["id"], OperationStatus.READY, actor="bob", approver="carol"
     )
     assert approved["approved_by"] == "carol"
+    running = ops.transition(op["id"], OperationStatus.RUNNING, actor="bob")
+    assert running["status"] == OperationStatus.RUNNING.value
 
 
 def test_retry_only_from_failed_or_blocked(ops):

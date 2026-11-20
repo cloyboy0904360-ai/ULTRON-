@@ -171,6 +171,18 @@ CREATE TABLE IF NOT EXISTS integration_evidence (
     detail TEXT,
     at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS webhook_events (
+    provider TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    processed_at TEXT,
+    payload_sha256 TEXT NOT NULL,
+    error_details TEXT,
+    PRIMARY KEY (provider, event_id)
+);
 """
 
 

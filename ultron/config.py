@@ -22,6 +22,7 @@ _INTEGRATION_VARS = (
     "SHOPIFY_SHOP",
     "SHOPIFY_ACCESS_TOKEN",
     "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
     "EBAY_CLIENT_ID",
     "EBAY_CLIENT_SECRET",
 )
@@ -48,7 +49,7 @@ class Settings:
 
         api_keys = tuple(
             key.strip()
-            for key in env.get("ULTRON_API_KEYS", "").split(",")
+            for key in env.get("ULTRON_API_KEYS", "").split(";")
             if key.strip()
         )
         environment = env.get("ULTRON_ENV", "development").strip().lower()
@@ -58,7 +59,7 @@ class Settings:
             )
         if environment == "production" and not api_keys:
             problems.append(
-                "ULTRON_API_KEYS is required in production (comma-separated API keys)"
+                "ULTRON_API_KEYS is required in production (semicolon-separated API key entries)"
             )
 
         log_level = env.get("ULTRON_LOG_LEVEL", "INFO").strip().upper()
