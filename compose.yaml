@@ -1,0 +1,22 @@
+services:
+  ultron:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      ULTRON_ENV: production
+      ULTRON_API_KEYS: ${ULTRON_API_KEYS:?Set ULTRON_API_KEYS in the host environment}
+      ULTRON_DATABASE_PATH: /data/ultron.db
+    volumes:
+      - ultron_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  ultron_data:
