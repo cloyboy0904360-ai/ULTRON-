@@ -125,3 +125,16 @@ def test_operation_reads_require_read_scope(secured_client):
     assert secured_client.get(
         "/operations", headers={"X-API-Key": "test-key"}
     ).status_code == 200
+
+
+
+def test_api_executor_blocks_when_agent_handler_is_not_registered(client):
+    task = client.post(
+        "/agents/OPS/tasks", json={"description": "Run operational check"}
+    ).json()
+
+    result = client.post(f"/agents/tasks/{task['id']}/execute")
+
+    assert result.status_code == 200
+    assert result.json()["status"] == "BLOCKED"
+    assert "No execution handler registered" in result.json()["error_details"]
