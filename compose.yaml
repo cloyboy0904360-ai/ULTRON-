@@ -18,5 +18,34 @@ services:
     cap_drop:
       - ALL
 
+  ultron-backup:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - ultron
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          if [ -f /data/ultron.db ]; then
+            python -m scripts.backup_db --database-path /data/ultron.db --backup-dir /data/backups --keep 7
+          else
+            echo "ULTRON database not created yet; backup will retry in 24 hours"
+          fi
+          sleep 86400
+        done
+    environment:
+      ULTRON_DATABASE_PATH: /data/ultron.db
+    volumes:
+      - ultron_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
 volumes:
   ultron_data:
