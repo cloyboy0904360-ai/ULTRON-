@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
+from ..agents import assign_task, list_agents
 from ..adapters.asana import AsanaAdapter
 from ..adapters.ebay import EbayAdapter
 from ..adapters.github import GitHubAdapter
@@ -87,6 +88,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="ULTRON", version="0.2.0")
     app.state.db = db
+    app.state.operations = operations
+    app.state.revenue = revenue
 
     @app.exception_handler(UltronError)
     async def ultron_error_handler(_: Request, exc: UltronError) -> JSONResponse:
@@ -115,6 +118,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def ready() -> dict[str, Any]:
         return check_readiness(db, adapters)
 
+    # ---------------------------------------------------------- workforce
+    @app.get("/agents")
+    def agents(p: Principal = Depends(principal)) -> list[dict[str, str]]:
+        _require(p, "operations:read")
+        return list_agents()
+
+    @app.post("/agents/{agent_name}/tasks", status_code=201)
+    def assign_agent_task(
+        agent_name: str, body: dict[str, Any], p: Principal = Depends(principal)
+    ) -> dict[str, Any]:
+        _require(p, "operations:write")
+        return assign_task(
+            operations,
+            agent=agent_name,
+            description=body.get("description", ""),
+            priority=int(body.get("priority", 3)),
+            required_approval=bool(body.get("required_approval", False)),
+            idempotency_key=body.get("idempotency_key"),
+            next_action=body.get("next_action"),
+        )
+
     # --------------------------------------------------------- operations
     @app.post("/operations", status_code=201)
     def create_operation(
@@ -134,13 +158,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.get("/operations")
-    def list_operations(status: str | None = None) -> list[dict[str, Any]]:
-        return operations.list(
-            OperationStatus(status) if status else None
-        )
+    def list_operations(
+        status: str | None = None, p: Principal = Depends(principal)
+    ) -> list[dict[str, Any]]:
+        _require(p, "operations:read")
+        return operations.list(OperationStatus(status) if status else None)
 
     @app.get("/operations/{operation_id}")
-    def get_operation(operation_id: str) -> dict[str, Any]:
+    def get_operation(
+        operation_id: str, p: Principal = Depends(principal)
+    ) -> dict[str, Any]:
+        _require(p, "operations:read")
         return operations.get(operation_id)
 
     @app.post("/operations/{operation_id}/transition")
