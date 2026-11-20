@@ -48,3 +48,11 @@ jobs:
 
       - name: Audit runtime and development dependencies
         run: $HOME/.local/bin/pip-audit -r requirements-dev.txt
+
+      - name: Validate Compose configuration
+        env:
+          ULTRON_API_KEYS: ci-only-placeholder
+        run: docker compose -f compose.yaml config --quiet
+
+      - name: Build production container
+        run: docker build --tag ultron:ci .
