@@ -24,6 +24,7 @@ from ..config import Settings
 from ..core.gates import Gate
 from ..core.operations import OperationController, OperationStatus
 from ..db import Database
+from ..executor import AgentExecutor
 from ..errors import (
     ApprovalRequiredError,
     DuplicateError,
@@ -85,11 +86,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     operations = OperationController(db)
     revenue = RevenueEngine(db)
     adapters = build_adapters(settings, db)
+    executor = AgentExecutor(operations)
 
     app = FastAPI(title="ULTRON", version="0.2.0")
     app.state.db = db
     app.state.operations = operations
     app.state.revenue = revenue
+    app.state.executor = executor
 
     @app.exception_handler(UltronError)
     async def ultron_error_handler(_: Request, exc: UltronError) -> JSONResponse:
@@ -138,6 +141,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             idempotency_key=body.get("idempotency_key"),
             next_action=body.get("next_action"),
         )
+
+    @app.post("/agents/tasks/{operation_id}/execute")
+    def execute_agent_task(
+        operation_id: str, p: Principal = Depends(principal)
+    ) -> dict[str, Any]:
+        _require(p, "operations:write")
+        return executor.execute(operation_id)
 
     # --------------------------------------------------------- operations
     @app.post("/operations", status_code=201)
