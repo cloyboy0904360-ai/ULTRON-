@@ -1,6 +1,6 @@
 """API-key authentication and permission checks.
 
-Keys are configured via ``ULTRON_API_KEYS`` (comma-separated). Each key
+Keys are configured via ``ULTRON_API_KEYS`` (semicolon-separated). Each key
 may carry scopes using the form ``rawkey:scope1,scope2``; a key without
 a scope suffix has all scopes. Keys are only ever compared via a
 constant-time digest and are never logged.
