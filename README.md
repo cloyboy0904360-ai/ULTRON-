@@ -22,11 +22,15 @@ ultron/
 │   ├── ledger.py      Received revenue, costs, profit
 │   └── engine.py      Prospects→…→GET PAID business rules
 ├── adapters/          GitHub, Asana, Make, Shopify, Stripe, eBay
-├── api/app.py         FastAPI routes (thin; rules live in the engine)
+├── api/app.py         FastAPI routes, workforce API and signed Stripe webhook
+├── agents.py          Seven-role workforce registry
+├── executor.py        Evidence-gated task handler executor
 └── jobs/scheduler.py  Background jobs tracked as operations
 scripts/
+├── backup_db.py            Verified SQLite backup utility
+├── daily_report.py         Aggregate daily operations report
 └── pr_review_to_asana.py   PR-review → Asana follow-up (used by the workflow)
-tests/                 pytest suite (58 tests)
+tests/                 pytest suite
 ```
 
 ## Installation
