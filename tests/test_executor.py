@@ -11,7 +11,7 @@ def test_executor_routes_and_persists_success(tmp_path):
             store,
             {AgentName.NOVA: lambda objective: ({"count": 1}, "research-evidence")},
         )
-        submitted = executor.submit(task_key="research-1", objective="research opportunities")
+        submitted = executor.submit(task_key="research-1", objective="discover market trends")
         assert submitted["agent"] == "NOVA"
         result = executor.execute(task_key="research-1", worker="worker-1")
         assert result["status"] == "VERIFIED"
