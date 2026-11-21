@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Google News — UK freelance contracts (discovery only)",
+    "url": "https://news.google.com/rss/search?q=%22freelance+contract%22+OR+%22paid+freelance+work%22+when:7d&hl=en-GB&gl=GB&ceid=GB:en",
+    "enabled": true
+  },
+  {
+    "name": "Google News — AI training and data tasks (discovery only)",
+    "url": "https://news.google.com/rss/search?q=%22AI+data+annotation%22+OR+%22AI+training+jobs%22+UK+when:7d&hl=en-GB&gl=GB&ceid=GB:en",
+    "enabled": true
+  },
+  {
+    "name": "Google News — UK small business contracts (discovery only)",
+    "url": "https://news.google.com/rss/search?q=%22small+business+contract%22+OR+%22supplier+opportunity%22+UK+when:7d&hl=en-GB&gl=GB&ceid=GB:en",
+    "enabled": true
+  },
+  {
+    "name": "Google News — UK public tenders for SMEs (discovery only)",
+    "url": "https://news.google.com/rss/search?q=%22UK+tender+opportunity%22+OR+%22public+sector+contract%22+SME+when:7d&hl=en-GB&gl=GB&ceid=GB:en",
+    "enabled": true
+  }
+]
