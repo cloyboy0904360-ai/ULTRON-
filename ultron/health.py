@@ -1,11 +1,13 @@
-"""Application health checks."""
+"""Application health and capability checks."""
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from .adapters.base import BaseAdapter
 from .db import Database
+from .integrations import CapabilityRegistry
 
 
 def check_health(db: Database, adapters: list[BaseAdapter] | None = None) -> dict[str, Any]:
@@ -24,15 +26,15 @@ def check_health(db: Database, adapters: list[BaseAdapter] | None = None) -> dic
 def check_readiness(
     db: Database, adapters: list[BaseAdapter] | None = None
 ) -> dict[str, Any]:
-    """Readiness: database plus every configured integration."""
+    """Readiness: database, configured adapters and secret-safe capabilities."""
     health = check_health(db, adapters)
-    integrations = []
-    for adapter in adapters or []:
-        integrations.append(adapter.status())
+    integrations = [adapter.status() for adapter in adapters or []]
     blocked = [i for i in integrations if i["status"] != "CONNECTED"]
+    capabilities = CapabilityRegistry.from_environment(os.environ).snapshot()
     return {
         **health,
         "ready": health["database"] == "ok",
         "integrations": integrations,
         "integrations_blocked": [i["integration"] for i in blocked],
+        "capabilities": capabilities,
     }
