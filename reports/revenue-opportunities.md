@@ -1,7 +1,7 @@
 # ULTRON Revenue Opportunity Research
 
-- **Collection status:** SUCCESS
-- **Collected at (UTC):** 2026-11-23T20:42:51.319436+00:00
+- **Collection status:** FAILED
+- **Collected at (UTC):** 2026-11-24T19:48:14.588180+00:00
 - **Feeds configured:** 4
 - **Unique opportunities retained:** 1
 - **Scoring:** evidence/actionability score out of 100; not a probability of winning.
@@ -19,7 +19,10 @@ Potential opportunity values are unverified advertised leads, not collected reve
 
 ## Collection errors
 
-- None
+- Google News — UK freelance contracts (discovery only) (https://news.google.com/rss/search?q=%22freelance+contract%22+OR+%22paid+freelance+work%22+when:7d&hl=en-GB&gl=GB&ceid=GB:en): HTTPError: HTTP Error 503: Service Unavailable
+- Google News — AI training and data tasks (discovery only) (https://news.google.com/rss/search?q=%22AI+data+annotation%22+OR+%22AI+training+jobs%22+UK+when:7d&hl=en-GB&gl=GB&ceid=GB:en): HTTPError: HTTP Error 503: Service Unavailable
+- Google News — UK small business contracts (discovery only) (https://news.google.com/rss/search?q=%22small+business+contract%22+OR+%22supplier+opportunity%22+UK+when:7d&hl=en-GB&gl=GB&ceid=GB:en): HTTPError: HTTP Error 503: Service Unavailable
+- Google News — UK public tenders for SMEs (discovery only) (https://news.google.com/rss/search?q=%22UK+tender+opportunity%22+OR+%22public+sector+contract%22+SME+when:7d&hl=en-GB&gl=GB&ceid=GB:en): HTTPError: HTTP Error 503: Service Unavailable
 
 ## Required verification before acting
 
