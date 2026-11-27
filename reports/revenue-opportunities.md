@@ -1,7 +1,7 @@
 # ULTRON Revenue Opportunity Research
 
 - **Collection status:** SUCCESS
-- **Collected at (UTC):** 2026-11-26T18:43:38.352964+00:00
+- **Collected at (UTC):** 2026-11-27T18:35:10.024362+00:00
 - **Feeds configured:** 4
 - **Unique opportunities retained:** 1
 - **Scoring:** evidence/actionability score out of 100; not a probability of winning.
